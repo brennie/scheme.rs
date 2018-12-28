@@ -147,6 +147,8 @@ pub enum Token<'a> {
     Char(char),
     /// A string literal.
     Str(Cow<'a, str>),
+    /// An identifier.
+    Ident(&'a str),
 }
 
 /// Parse a token.
@@ -158,10 +160,11 @@ where
     choice((
         item('(').map(|_| Token::Open),
         item(')').map(|_| Token::Close),
-        item('.').skip(look_ahead(delimiter())).map(|_| Token::Dot),
+        attempt(item('.').skip(look_ahead(delimiter()))).map(|_| Token::Dot),
         attempt(bool_lit()).map(Token::Bool),
         attempt(char_lit()).map(Token::Char),
         string_lit().map(Token::Str),
+        ident().map(Token::Ident),
     ))
 }
 
@@ -241,6 +244,31 @@ where
     })
 }
 
+/// Parse an identifier.
+fn ident<'a, I>() -> impl Parser<Input = I, Output = &'a str>
+where
+    I: RangeStream<Item = char, Range = &'a str> + 'a,
+    I::Error: ParseError<I::Item, I::Range, I::Position>,
+{
+    recognize(choice((
+        satisfy(is_ident_initial_char).with(skip_many(satisfy(is_ident_subsequent_char))),
+        item('+').map(|_| ()),
+        item('-').map(|_| ()),
+        range("...").map(|_| ()),
+    )))
+    .skip(look_ahead(delimiter()))
+}
+
+/// Whether or not a character can be the leading character in an identifier.
+fn is_ident_initial_char(c: char) -> bool {
+    c.is_ascii_alphabetic() || "!$%&*/:<=>?^_~".find(c).is_some()
+}
+
+/// Whether or not a character can be a subsequent character in an identifier.
+fn is_ident_subsequent_char(c: char) -> bool {
+    is_ident_initial_char(c) || c.is_ascii_digit() || "+-.@".find(c).is_some()
+}
+
 /// Return whether or not a character is a delimiter.
 ///
 /// This does not take into account EOF.
@@ -285,6 +313,28 @@ mod test {
                 Token::Open,
                 Token::Bool(true),
                 Token::Bool(false),
+                Token::Close,
+            ])
+        );
+
+        assert_eq!(
+            tokenize("(define plus (lambda (x y) (+ x y)))").collect::<Result<Vec<_>, _>>(),
+            Ok(vec![
+                Token::Open,
+                Token::Ident("define"),
+                Token::Ident("plus"),
+                Token::Open,
+                Token::Ident("lambda"),
+                Token::Open,
+                Token::Ident("x"),
+                Token::Ident("y"),
+                Token::Close,
+                Token::Open,
+                Token::Ident("+"),
+                Token::Ident("x"),
+                Token::Ident("y"),
+                Token::Close,
+                Token::Close,
                 Token::Close,
             ])
         );
@@ -339,6 +389,30 @@ mod test {
         assert_eq!(
             token().parse(r#""\"""#),
             Ok((Token::Str(Cow::Owned("\"".into())), ""))
+        );
+    }
+
+    #[test]
+    fn test_token_ident() {
+        assert_eq!(token().parse("lambda"), Ok((Token::Ident("lambda"), "")));
+        assert_eq!(
+            token().parse("list->vector"),
+            Ok((Token::Ident("list->vector"), ""))
+        );
+        assert_eq!(token().parse("<=?"), Ok((Token::Ident("<=?"), "")));
+        assert_eq!(token().parse("q"), Ok((Token::Ident("q"), "")));
+        assert_eq!(token().parse("soup"), Ok((Token::Ident("soup"), "")));
+        assert_eq!(token().parse("V17a"), Ok((Token::Ident("V17a"), "")));
+        assert_eq!(
+            token().parse("a34kTMNs"),
+            Ok((Token::Ident("a34kTMNs"), ""))
+        );
+        assert_eq!(token().parse("+"), Ok((Token::Ident("+"), "")));
+        assert_eq!(token().parse("-"), Ok((Token::Ident("-"), "")));
+        assert_eq!(token().parse("..."), Ok((Token::Ident("..."), "")));
+        assert_eq!(
+            token().parse("the-word-recursion-has-many-meanings"),
+            Ok((Token::Ident("the-word-recursion-has-many-meanings"), ""))
         );
     }
 }
