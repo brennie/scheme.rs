@@ -12,7 +12,7 @@ use combine::{
         char::space,
         choice::{choice, or},
         combinator::{attempt, look_ahead},
-        item::{any, eof, item, satisfy},
+        item::{any, eof, item, satisfy, value},
         range::{range, recognize},
         repeat::skip_many,
         sequence::between,
@@ -147,6 +147,8 @@ pub enum Token<'a> {
     Quasiquote,
     /// An unquote.
     Unquote,
+    /// A splicing unquote.
+    UnquoteSplicing,
     /// A boolean value.
     Bool(bool),
     /// A character value.
@@ -169,7 +171,10 @@ where
         attempt(item('.').skip(look_ahead(delimiter()))).map(|_| Token::Dot),
         item('\'').map(|_| Token::Quote),
         item('`').map(|_| Token::Quasiquote),
-        item(',').map(|_| Token::Unquote),
+        item(',').with(or(
+            item('@').map(|_| Token::UnquoteSplicing),
+            value(Token::Unquote),
+        )),
         attempt(bool_lit()).map(Token::Bool),
         attempt(char_lit()).map(Token::Char),
         string_lit().map(Token::Str),
@@ -376,6 +381,27 @@ mod test {
                 Token::Close,
             ])
         );
+
+        assert_eq!(
+            tokenize("`(a b ,@(map f '(c d)))").collect::<Result<Vec<_>, _>>(),
+            Ok(vec![
+                Token::Quasiquote,
+                Token::Open,
+                Token::Ident("a"),
+                Token::Ident("b"),
+                Token::UnquoteSplicing,
+                Token::Open,
+                Token::Ident("map"),
+                Token::Ident("f"),
+                Token::Quote,
+                Token::Open,
+                Token::Ident("c"),
+                Token::Ident("d"),
+                Token::Close,
+                Token::Close,
+                Token::Close,
+            ])
+        );
     }
 
     #[test]
@@ -406,6 +432,11 @@ mod test {
     #[test]
     fn test_token_unquote() {
         assert_eq!(token().parse(","), Ok((Token::Unquote, "")));
+    }
+
+    #[test]
+    fn test_token_unquote_splicing() {
+        assert_eq!(token().parse(",@"), Ok((Token::UnquoteSplicing, "")));
     }
 
     #[test]
