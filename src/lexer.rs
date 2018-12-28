@@ -139,6 +139,8 @@ pub enum Token {
     Close,
     /// A dot for a dotted pair.
     Dot,
+    /// A boolean value.
+    Bool(bool),
 }
 
 /// Parse a token.
@@ -151,7 +153,16 @@ where
         item('(').map(|_| Token::Open),
         item(')').map(|_| Token::Close),
         item('.').skip(look_ahead(delimiter())).map(|_| Token::Dot),
+        bool_lit().map(Token::Bool),
     ))
+}
+
+fn bool_lit<'a, I>() -> impl Parser<Input = I, Output = bool>
+where
+    I: RangeStream<Item = char, Range = &'a str> + 'a,
+    I::Error: ParseError<I::Item, I::Range, I::Position>,
+{
+    item('#').with(or(item('t').map(|_| true), item('f').map(|_| false)))
 }
 
 fn is_delimiter_char(c: char) -> bool {
@@ -187,6 +198,16 @@ mod test {
                 Token::Close,
             ])
         );
+
+        assert_eq!(
+            tokenize("(#t#f)").collect::<Result<Vec<_>, _>>(),
+            Ok(vec![
+                Token::Open,
+                Token::Bool(true),
+                Token::Bool(false),
+                Token::Close,
+            ])
+        );
     }
 
     #[test]
@@ -202,5 +223,11 @@ mod test {
     #[test]
     fn test_token_dot() {
         assert_eq!(token().parse("."), Ok((Token::Dot, "")));
+    }
+
+    #[test]
+    fn test_token_bool() {
+        assert_eq!(token().parse("#t"), Ok((Token::Bool(true), "")));
+        assert_eq!(token().parse("#f"), Ok((Token::Bool(false), "")));
     }
 }
