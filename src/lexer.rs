@@ -145,6 +145,8 @@ pub enum Token<'a> {
     Quote,
     /// A quasiquote.
     Quasiquote,
+    /// An unquote.
+    Unquote,
     /// A boolean value.
     Bool(bool),
     /// A character value.
@@ -167,6 +169,7 @@ where
         attempt(item('.').skip(look_ahead(delimiter()))).map(|_| Token::Dot),
         item('\'').map(|_| Token::Quote),
         item('`').map(|_| Token::Quasiquote),
+        item(',').map(|_| Token::Unquote),
         attempt(bool_lit()).map(Token::Bool),
         attempt(char_lit()).map(Token::Char),
         string_lit().map(Token::Str),
@@ -356,6 +359,23 @@ mod test {
                 Token::Close,
             ])
         );
+
+        assert_eq!(
+            tokenize("`(a b ,(+ a b))").collect::<Result<Vec<_>, _>>(),
+            Ok(vec![
+                Token::Quasiquote,
+                Token::Open,
+                Token::Ident("a"),
+                Token::Ident("b"),
+                Token::Unquote,
+                Token::Open,
+                Token::Ident("+"),
+                Token::Ident("a"),
+                Token::Ident("b"),
+                Token::Close,
+                Token::Close,
+            ])
+        );
     }
 
     #[test]
@@ -381,6 +401,11 @@ mod test {
     #[test]
     fn test_token_quasiquote() {
         assert_eq!(token().parse("`"), Ok((Token::Quasiquote, "")));
+    }
+
+    #[test]
+    fn test_token_unquote() {
+        assert_eq!(token().parse(","), Ok((Token::Unquote, "")));
     }
 
     #[test]
