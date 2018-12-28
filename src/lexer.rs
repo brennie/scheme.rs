@@ -149,6 +149,8 @@ pub enum Token<'a> {
     Unquote,
     /// A splicing unquote.
     UnquoteSplicing,
+    /// The beginning of a vector.
+    BeginVector,
     /// A boolean value.
     Bool(bool),
     /// A character value.
@@ -175,29 +177,24 @@ where
             item('@').map(|_| Token::UnquoteSplicing),
             value(Token::Unquote),
         )),
-        attempt(bool_lit()).map(Token::Bool),
-        attempt(char_lit()).map(Token::Char),
+        attempt(item('#').with(choice((
+            item('t').map(|_| Token::Bool(true)),
+            item('f').map(|_| Token::Bool(false)),
+            item('(').map(|_| Token::BeginVector),
+            char_lit_tail().map(Token::Char),
+        )))),
         string_lit().map(Token::Str),
         ident().map(Token::Ident),
     ))
 }
 
-/// Parse a bool literal.
-fn bool_lit<'a, I>() -> impl Parser<Input = I, Output = bool>
+/// Parse a character literal without the leading `#`.
+fn char_lit_tail<'a, I>() -> impl Parser<Input = I, Output = char> + 'a
 where
     I: RangeStream<Item = char, Range = &'a str> + 'a,
     I::Error: ParseError<I::Item, I::Range, I::Position>,
 {
-    item('#').with(or(item('t').map(|_| true), item('f').map(|_| false)))
-}
-
-/// Parse a character literal.
-fn char_lit<'a, I>() -> impl Parser<Input = I, Output = char> + 'a
-where
-    I: RangeStream<Item = char, Range = &'a str> + 'a,
-    I::Error: ParseError<I::Item, I::Range, I::Position>,
-{
-    range("#\\")
+    item('\\')
         .with(choice((
             range("space").map(|_| ' '),
             range("newline").map(|_| '\n'),
@@ -402,6 +399,18 @@ mod test {
                 Token::Close,
             ])
         );
+
+        assert_eq!(
+            tokenize("'#(a b c)").collect::<Result<Vec<_>, _>>(),
+            Ok(vec![
+                Token::Quote,
+                Token::BeginVector,
+                Token::Ident("a"),
+                Token::Ident("b"),
+                Token::Ident("c"),
+                Token::Close,
+            ])
+        );
     }
 
     #[test]
@@ -437,6 +446,11 @@ mod test {
     #[test]
     fn test_token_unquote_splicing() {
         assert_eq!(token().parse(",@"), Ok((Token::UnquoteSplicing, "")));
+    }
+
+    #[test]
+    fn test_token_begin_vector() {
+        assert_eq!(token().parse("#("), Ok((Token::BeginVector, "")));
     }
 
     #[test]
