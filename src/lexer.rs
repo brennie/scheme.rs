@@ -11,8 +11,9 @@ use combine::{
     parser::{
         char::space,
         choice::{choice, or},
-        combinator::look_ahead,
-        item::{eof, item, satisfy},
+        combinator::{attempt, look_ahead},
+        item::{any, eof, item, satisfy},
+        range::range,
         repeat::skip_many,
     },
     stream::{
@@ -141,10 +142,12 @@ pub enum Token {
     Dot,
     /// A boolean value.
     Bool(bool),
+    /// A character value.
+    Char(char),
 }
 
 /// Parse a token.
-fn token<'a, I>() -> impl Parser<Input = I, Output = Token>
+fn token<'a, I>() -> impl Parser<Input = I, Output = Token> + 'a
 where
     I: RangeStream<Item = char, Range = &'a str> + 'a,
     I::Error: ParseError<I::Item, I::Range, I::Position>,
@@ -153,7 +156,8 @@ where
         item('(').map(|_| Token::Open),
         item(')').map(|_| Token::Close),
         item('.').skip(look_ahead(delimiter())).map(|_| Token::Dot),
-        bool_lit().map(Token::Bool),
+        attempt(bool_lit()).map(Token::Bool),
+        attempt(char_lit()).map(Token::Char),
     ))
 }
 
@@ -164,6 +168,21 @@ where
     I::Error: ParseError<I::Item, I::Range, I::Position>,
 {
     item('#').with(or(item('t').map(|_| true), item('f').map(|_| false)))
+}
+
+/// Parse a character literal.
+fn char_lit<'a, I>() -> impl Parser<Input = I, Output = char> + 'a
+where
+    I: RangeStream<Item = char, Range = &'a str> + 'a,
+    I::Error: ParseError<I::Item, I::Range, I::Position>,
+{
+    range("#\\")
+        .with(choice((
+            range("space").map(|_| ' '),
+            range("newline").map(|_| '\n'),
+            any(),
+        )))
+        .skip(look_ahead(delimiter()))
 }
 
 /// Return whether or not a character is a delimiter.
@@ -234,5 +253,16 @@ mod test {
     fn test_token_bool() {
         assert_eq!(token().parse("#t"), Ok((Token::Bool(true), "")));
         assert_eq!(token().parse("#f"), Ok((Token::Bool(false), "")));
+    }
+
+    #[test]
+    fn test_token_char() {
+        assert_eq!(token().parse("#\\space"), Ok((Token::Char(' '), "")));
+        assert_eq!(token().parse("#\\newline"), Ok((Token::Char('\n'), "")));
+        assert_eq!(token().parse("#\\ "), Ok((Token::Char(' '), "")));
+        assert_eq!(token().parse("#\\\n"), Ok((Token::Char('\n'), "")));
+        assert_eq!(token().parse("#\\a"), Ok((Token::Char('a'), "")));
+        assert_eq!(token().parse("#\\4"), Ok((Token::Char('4'), "")));
+        assert_eq!(token().parse("#\\*"), Ok((Token::Char('*'), "")));
     }
 }
