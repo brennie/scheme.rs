@@ -9,7 +9,7 @@ use std::{borrow::Cow, fmt};
 
 use combine::{
     parser::{
-        char::space,
+        char::{space, string_cmp},
         choice::{choice, or},
         combinator::{attempt, look_ahead},
         item::{any, eof, item, satisfy, value},
@@ -196,8 +196,8 @@ where
 {
     item('\\')
         .with(choice((
-            range("space").map(|_| ' '),
-            range("newline").map(|_| '\n'),
+            string_cmp("space", |a, b| a.eq_ignore_ascii_case(&b)).map(|_| ' '),
+            string_cmp("newline", |a, b| a.eq_ignore_ascii_case(&b)).map(|_| '\n'),
             any(),
         )))
         .skip(look_ahead(delimiter()))
@@ -462,7 +462,11 @@ mod test {
     #[test]
     fn test_token_char() {
         assert_eq!(token().parse("#\\space"), Ok((Token::Char(' '), "")));
+        assert_eq!(token().parse("#\\SPACE"), Ok((Token::Char(' '), "")));
+        assert_eq!(token().parse("#\\SpAcE"), Ok((Token::Char(' '), "")));
         assert_eq!(token().parse("#\\newline"), Ok((Token::Char('\n'), "")));
+        assert_eq!(token().parse("#\\NEWLINE"), Ok((Token::Char('\n'), "")));
+        assert_eq!(token().parse("#\\nEwLiNe"), Ok((Token::Char('\n'), "")));
         assert_eq!(token().parse("#\\ "), Ok((Token::Char(' '), "")));
         assert_eq!(token().parse("#\\\n"), Ok((Token::Char('\n'), "")));
         assert_eq!(token().parse("#\\a"), Ok((Token::Char('a'), "")));
