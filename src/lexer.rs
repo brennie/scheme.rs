@@ -157,6 +157,7 @@ where
     ))
 }
 
+/// Parse a bool literal.
 fn bool_lit<'a, I>() -> impl Parser<Input = I, Output = bool>
 where
     I: RangeStream<Item = char, Range = &'a str> + 'a,
@@ -165,6 +166,9 @@ where
     item('#').with(or(item('t').map(|_| true), item('f').map(|_| false)))
 }
 
+/// Return whether or not a character is a delimiter.
+///
+/// This does not take into account EOF.
 fn is_delimiter_char(c: char) -> bool {
     match c {
         c if c.is_ascii_whitespace() => true,
@@ -173,6 +177,7 @@ fn is_delimiter_char(c: char) -> bool {
     }
 }
 
+/// Parse a delimiter.
 fn delimiter<'a, I>() -> impl Parser<Input = I, Output = ()>
 where
     I: RangeStream<Item = char, Range = &'a str> + 'a,
