@@ -11,7 +11,8 @@ use combine::{
     parser::{
         char::space,
         choice::{choice, or},
-        item::{eof, item},
+        combinator::look_ahead,
+        item::{eof, item, satisfy},
         repeat::skip_many,
     },
     stream::{
@@ -136,6 +137,8 @@ pub enum Token {
     Open,
     /// A close parenthesis.
     Close,
+    /// A dot for a dotted pair.
+    Dot,
 }
 
 /// Parse a token.
@@ -147,7 +150,24 @@ where
     choice((
         item('(').map(|_| Token::Open),
         item(')').map(|_| Token::Close),
+        item('.').skip(look_ahead(delimiter())).map(|_| Token::Dot),
     ))
+}
+
+fn is_delimiter_char(c: char) -> bool {
+    match c {
+        c if c.is_ascii_whitespace() => true,
+        '(' | ')' | '"' | ';' => true,
+        _ => false,
+    }
+}
+
+fn delimiter<'a, I>() -> impl Parser<Input = I, Output = ()>
+where
+    I: RangeStream<Item = char, Range = &'a str> + 'a,
+    I::Error: ParseError<I::Item, I::Range, I::Position>,
+{
+    or(satisfy(is_delimiter_char).map(|_| ()), eof())
 }
 
 #[cfg(test)]
@@ -177,5 +197,10 @@ mod test {
     #[test]
     fn test_token_close() {
         assert_eq!(token().parse("("), Ok((Token::Open, "")));
+    }
+
+    #[test]
+    fn test_token_dot() {
+        assert_eq!(token().parse("."), Ok((Token::Dot, "")));
     }
 }
