@@ -141,6 +141,8 @@ pub enum Token<'a> {
     Close,
     /// A dot for a dotted pair.
     Dot,
+    /// A quote.
+    Quote,
     /// A boolean value.
     Bool(bool),
     /// A character value.
@@ -161,6 +163,7 @@ where
         item('(').map(|_| Token::Open),
         item(')').map(|_| Token::Close),
         attempt(item('.').skip(look_ahead(delimiter()))).map(|_| Token::Dot),
+        item('\'').map(|_| Token::Quote),
         attempt(bool_lit()).map(Token::Bool),
         attempt(char_lit()).map(Token::Char),
         string_lit().map(Token::Str),
@@ -338,6 +341,18 @@ mod test {
                 Token::Close,
             ])
         );
+
+        assert_eq!(
+            tokenize("'(a b c)").collect::<Result<Vec<_>, _>>(),
+            Ok(vec![
+                Token::Quote,
+                Token::Open,
+                Token::Ident("a"),
+                Token::Ident("b"),
+                Token::Ident("c"),
+                Token::Close,
+            ])
+        );
     }
 
     #[test]
@@ -353,6 +368,11 @@ mod test {
     #[test]
     fn test_token_dot() {
         assert_eq!(token().parse("."), Ok((Token::Dot, "")));
+    }
+
+    #[test]
+    fn test_token_quote() {
+        assert_eq!(token().parse("'"), Ok((Token::Quote, "")));
     }
 
     #[test]
