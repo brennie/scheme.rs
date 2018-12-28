@@ -5,10 +5,129 @@
 // or http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
+use std::fmt;
+
 use combine::{
-    parser::{choice::choice, item::item},
-    ParseError, Parser, RangeStream,
+    parser::{
+        char::space,
+        choice::{choice, or},
+        item::{eof, item},
+        repeat::skip_many,
+    },
+    stream::{
+        state::{Positioner, RangePositioner, State},
+        Resetable,
+    },
+    ParseError, Parser, RangeStream, StreamOnce,
 };
+
+/// The position of a token in a file.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
+pub struct LinePosition {
+    /// The line the token appeared on.
+    ///
+    /// This is 1-indexed.
+    pub line: usize,
+
+    /// The column the token started in.
+    ///
+    /// This is 1-indexed.
+    pub col: usize,
+}
+
+impl fmt::Display for LinePosition {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "line {} column {}", self.line, self.col)
+    }
+}
+
+impl Default for LinePosition {
+    fn default() -> Self {
+        LinePosition { line: 1, col: 1 }
+    }
+}
+
+/// A positioner for tracking a token's position in a file.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct LinePositioner {
+    /// The current position of the stream.
+    state: LinePosition,
+}
+
+impl Positioner<char> for LinePositioner {
+    type Position = LinePosition;
+
+    fn position(&self) -> Self::Position {
+        self.state
+    }
+
+    fn update(&mut self, item: &char) {
+        if *item == '\n' {
+            self.state.line += 1;
+            self.state.col = 1;
+        } else {
+            self.state.col += 1;
+        }
+    }
+}
+
+impl<'a> RangePositioner<char, &'a str> for LinePositioner {
+    fn update_range(&mut self, range: &&'a str) {
+        for c in range.chars() {
+            self.update(&c)
+        }
+    }
+}
+
+impl Resetable for LinePositioner {
+    type Checkpoint = Self;
+
+    fn checkpoint(&self) -> Self {
+        *self
+    }
+
+    fn reset(&mut self, checkpoint: Self) {
+        self.state = checkpoint.state;
+    }
+}
+
+/// Tokenize the input and return an iterator over the results.
+pub fn tokenize(s: &str) -> TokenIter<'_> {
+    TokenIter {
+        remaining: Some(State::with_positioner(s, Default::default())),
+    }
+}
+
+/// An iterator of the tokens parsed from input.
+pub struct TokenIter<'a> {
+    /// The remaining input (if any).
+    remaining: Option<State<&'a str, LinePositioner>>,
+}
+
+impl<'a> Iterator for TokenIter<'a> {
+    type Item = Result<Token, <State<&'a str, LinePositioner> as StreamOnce>::Error>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let remaining = self.remaining.take()?;
+
+        let mut parser = or(
+            skip_many(space()).with(token()).map(Some),
+            eof().map(|_| None),
+        );
+
+        match parser.parse(remaining) {
+            Ok((Some(tok), remaining)) => {
+                self.remaining = Some(remaining);
+                Some(Ok(tok))
+            }
+            Ok((None, _)) => {
+                self.remaining = None;
+                None
+            }
+            Err(e) => Some(Err(e)),
+        }
+    }
+}
 
 /// A parsed token.
 #[derive(Clone, Debug, PartialEq)]
@@ -34,6 +153,21 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_tokenize() {
+        assert_eq!(
+            tokenize("((( )))").collect::<Result<Vec<_>, _>>(),
+            Ok(vec![
+                Token::Open,
+                Token::Open,
+                Token::Open,
+                Token::Close,
+                Token::Close,
+                Token::Close,
+            ])
+        );
+    }
 
     #[test]
     fn test_token_open() {
