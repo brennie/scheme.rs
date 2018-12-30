@@ -7,3 +7,5 @@ license = "MIT/Apache-2.0"
 
 [dependencies]
 combine = "3.6.3"
+num-complex = "0.2.1"
+num-rational = "0.2.1"
