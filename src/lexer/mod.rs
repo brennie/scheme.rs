@@ -25,8 +25,11 @@ use combine::{
     },
     ParseError, Parser, RangeStream, StreamOnce,
 };
+use either::Either;
 
 pub use self::number::Number;
+
+include!(concat!(env!("OUT_DIR"), "/keyword.codegen.rs"));
 
 /// The position of a token in a file.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
@@ -165,6 +168,81 @@ pub enum Token<'a> {
     Ident(&'a str),
     /// A numerical literal.
     Number(Number),
+    /// A syntatic keyword.
+    Keyword(Keyword),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Keyword {
+    /// The `quote` keyword.
+    Quote,
+    /// The `lambda` keyword.
+    Lambda,
+    /// The `if` keyword.
+    If,
+    /// The `set` keyword.
+    Set,
+    /// The `begin` keyword.
+    Begin,
+    /// The `cond` keyword.
+    Cond,
+    /// The `and` keyword.
+    And,
+    /// The `or` keyword.
+    Or,
+    /// The `case` keyword.
+    Case,
+    /// The `let` keyword.
+    Let,
+    /// The `let*` keyword.
+    LetStar,
+    /// The `letrec` keyword.
+    LetRec,
+    /// The `do` keyword.
+    Do,
+    /// The `delay` keyword.
+    Delay,
+    /// The `quasiquote` keyword.
+    Quasiquote,
+    /// The `else` keyword.
+    Else,
+    /// The `=>` keyword.
+    RightArrow,
+    /// The `define` keyword.
+    Define,
+    /// The `unquote` keyword.
+    Unquote,
+    /// The `unquote-splicing` keyword.
+    UnquoteSplicing,
+}
+
+impl Keyword {
+    /// Whether or not a keyword can begin an expression.
+    pub fn is_expression_keyword(self) -> bool {
+        match self {
+            Keyword::Quote
+            | Keyword::Lambda
+            | Keyword::If
+            | Keyword::Set
+            | Keyword::Begin
+            | Keyword::Cond
+            | Keyword::And
+            | Keyword::Or
+            | Keyword::Case
+            | Keyword::Let
+            | Keyword::LetStar
+            | Keyword::LetRec
+            | Keyword::Do
+            | Keyword::Delay
+            | Keyword::Quasiquote => true,
+
+            Keyword::Else
+            | Keyword::RightArrow
+            | Keyword::Define
+            | Keyword::Unquote
+            | Keyword::UnquoteSplicing => false,
+        }
+    }
 }
 
 /// Parse a token.
@@ -190,7 +268,10 @@ where
             char_lit_tail().map(Token::Char),
         )))),
         string_lit().map(Token::Str),
-        attempt(ident().map(Token::Ident)),
+        attempt(ident_or_keyword().map(|t| match t {
+            Either::Left(keyword) => Token::Keyword(keyword),
+            Either::Right(ident) => Token::Ident(ident),
+        })),
         number::number()
             .skip(look_ahead(delimiter()))
             .map(Token::Number),
@@ -264,8 +345,8 @@ where
     })
 }
 
-/// Parse an identifier.
-fn ident<'a, I>() -> impl Parser<Input = I, Output = &'a str>
+/// Parse an identifier or keyword.
+fn ident_or_keyword<'a, I>() -> impl Parser<Input = I, Output = Either<Keyword, &'a str>>
 where
     I: RangeStream<Item = char, Range = &'a str> + 'a,
     I::Error: ParseError<I::Item, I::Range, I::Position>,
@@ -277,6 +358,10 @@ where
         range("...").map(|_| ()),
     )))
     .skip(look_ahead(delimiter()))
+    .map(|s| match KEYWORDS.get(s) {
+        Some(kw) => Either::Left(*kw),
+        None => Either::Right(s),
+    })
 }
 
 /// Whether or not a character can be the leading character in an identifier.
@@ -344,10 +429,10 @@ mod test {
             tokenize("(define plus (lambda (x y) (+ x y)))").collect::<Result<Vec<_>, _>>(),
             Ok(vec![
                 Token::Open,
-                Token::Ident("define"),
+                Token::Keyword(Keyword::Define),
                 Token::Ident("plus"),
                 Token::Open,
-                Token::Ident("lambda"),
+                Token::Keyword(Keyword::Lambda),
                 Token::Open,
                 Token::Ident("x"),
                 Token::Ident("y"),
@@ -552,7 +637,6 @@ mod test {
 
     #[test]
     fn test_token_ident() {
-        assert_eq!(token().parse("lambda"), Ok((Token::Ident("lambda"), "")));
         assert_eq!(
             token().parse("list->vector"),
             Ok((Token::Ident("list->vector"), ""))
@@ -571,6 +655,75 @@ mod test {
         assert_eq!(
             token().parse("the-word-recursion-has-many-meanings"),
             Ok((Token::Ident("the-word-recursion-has-many-meanings"), ""))
+        );
+    }
+
+    #[test]
+    fn test_token_keyword() {
+        assert_eq!(
+            token().parse("quote"),
+            Ok((Token::Keyword(Keyword::Quote), ""))
+        );
+        assert_eq!(
+            token().parse("lambda"),
+            Ok((Token::Keyword(Keyword::Lambda), ""))
+        );
+        assert_eq!(token().parse("if"), Ok((Token::Keyword(Keyword::If), "")));
+        assert_eq!(
+            token().parse("set!"),
+            Ok((Token::Keyword(Keyword::Set), ""))
+        );
+        assert_eq!(
+            token().parse("begin"),
+            Ok((Token::Keyword(Keyword::Begin), ""))
+        );
+        assert_eq!(
+            token().parse("cond"),
+            Ok((Token::Keyword(Keyword::Cond), ""))
+        );
+        assert_eq!(token().parse("and"), Ok((Token::Keyword(Keyword::And), "")));
+        assert_eq!(token().parse("or"), Ok((Token::Keyword(Keyword::Or), "")));
+        assert_eq!(
+            token().parse("case"),
+            Ok((Token::Keyword(Keyword::Case), ""))
+        );
+        assert_eq!(token().parse("let"), Ok((Token::Keyword(Keyword::Let), "")));
+        assert_eq!(
+            token().parse("let*"),
+            Ok((Token::Keyword(Keyword::LetStar), ""))
+        );
+        assert_eq!(
+            token().parse("letrec"),
+            Ok((Token::Keyword(Keyword::LetRec), ""))
+        );
+        assert_eq!(token().parse("do"), Ok((Token::Keyword(Keyword::Do), "")));
+        assert_eq!(
+            token().parse("delay"),
+            Ok((Token::Keyword(Keyword::Delay), ""))
+        );
+        assert_eq!(
+            token().parse("quasiquote"),
+            Ok((Token::Keyword(Keyword::Quasiquote), ""))
+        );
+        assert_eq!(
+            token().parse("else"),
+            Ok((Token::Keyword(Keyword::Else), ""))
+        );
+        assert_eq!(
+            token().parse("=>"),
+            Ok((Token::Keyword(Keyword::RightArrow), ""))
+        );
+        assert_eq!(
+            token().parse("define"),
+            Ok((Token::Keyword(Keyword::Define), ""))
+        );
+        assert_eq!(
+            token().parse("unquote"),
+            Ok((Token::Keyword(Keyword::Unquote), ""))
+        );
+        assert_eq!(
+            token().parse("unquote-splicing"),
+            Ok((Token::Keyword(Keyword::UnquoteSplicing), ""))
         );
     }
 
