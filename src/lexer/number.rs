@@ -9,6 +9,7 @@ use combine::{
     parser::{
         choice::{choice, optional, or},
         item::{item, satisfy},
+        repeat::skip_many1,
     },
     ParseError, Parser, RangeStream,
 };
@@ -105,6 +106,23 @@ where
     })
 }
 
+/// A parser to detect the presence of a suffix.
+///
+/// This parser only returns whether or not the suffix is present because it will
+/// only be used to recognize input, not to create a value.
+fn suffix<'a, I>() -> impl Parser<Input = I, Output = bool>
+where
+    I: RangeStream<Item = char, Range = &'a str>,
+    I::Error: ParseError<I::Item, I::Range, I::Position>,
+{
+    optional(item('e').with((optional(sign()), skip_many1(digit(Radix::Decimal))))).map(|myb| {
+        match myb {
+            Some(_) => true,
+            None => false,
+        }
+    })
+}
+
 /// Parse a single digit in a given radix.
 fn digit<'a, I>(radix: Radix) -> impl Parser<Input = I, Output = u32>
 where
@@ -118,6 +136,8 @@ where
 #[cfg(test)]
 mod test {
     use std::char::from_digit;
+
+    use combine::error::StringStreamError;
 
     use super::*;
 
@@ -260,6 +280,15 @@ mod test {
                 i
             );
         }
+    }
+
+    #[test]
+    fn test_suffix() {
+        assert_eq!(suffix().parse(""), Ok((false, "")));
+        assert_eq!(suffix().parse("e"), Err(StringStreamError::UnexpectedParse));
+        assert_eq!(suffix().parse("e123"), Ok((true, "")));
+        assert_eq!(suffix().parse("e+123"), Ok((true, "")));
+        assert_eq!(suffix().parse("e-123"), Ok((true, "")));
     }
 
 }
