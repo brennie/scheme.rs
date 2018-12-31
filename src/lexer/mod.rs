@@ -26,6 +26,8 @@ use combine::{
     ParseError, Parser, RangeStream, StreamOnce,
 };
 
+pub use self::number::Number;
+
 /// The position of a token in a file.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
 pub struct LinePosition {
@@ -161,6 +163,8 @@ pub enum Token<'a> {
     Str(Cow<'a, str>),
     /// An identifier.
     Ident(&'a str),
+    /// A numerical literal.
+    Number(Number),
 }
 
 /// Parse a token.
@@ -186,7 +190,10 @@ where
             char_lit_tail().map(Token::Char),
         )))),
         string_lit().map(Token::Str),
-        ident().map(Token::Ident),
+        attempt(ident().map(Token::Ident)),
+        number::number()
+            .skip(look_ahead(delimiter()))
+            .map(Token::Number),
     ))
 }
 
@@ -304,6 +311,9 @@ where
 
 #[cfg(test)]
 mod test {
+    use num_complex::Complex64;
+    use num_rational::Rational;
+
     use super::*;
 
     #[test]
@@ -413,6 +423,50 @@ mod test {
                 Token::Close,
             ])
         );
+
+        assert_eq!(
+            tokenize("(+ 1 2 3)").collect::<Result<Vec<_>, _>>(),
+            Ok(vec![
+                Token::Open,
+                Token::Ident("+"),
+                Token::Number(Number::Integer(1)),
+                Token::Number(Number::Integer(2)),
+                Token::Number(Number::Integer(3)),
+                Token::Close,
+            ])
+        );
+
+        assert_eq!(
+            tokenize("(sqrt 123.456)").collect::<Result<Vec<_>, _>>(),
+            Ok(vec![
+                Token::Open,
+                Token::Ident("sqrt"),
+                Token::Number(Number::Real(123.456)),
+                Token::Close,
+            ])
+        );
+
+        assert_eq!(
+            tokenize("(complex? 1+1i)").collect::<Result<Vec<_>, _>>(),
+            Ok(vec![
+                Token::Open,
+                Token::Ident("complex?"),
+                Token::Number(Number::Complex(Complex64::new(1.0, 1.0))),
+                Token::Close,
+            ])
+        );
+
+        assert_eq!(
+            tokenize("(+ 1/2 1/4 1/8)").collect::<Result<Vec<_>, _>>(),
+            Ok(vec![
+                Token::Open,
+                Token::Ident("+"),
+                Token::Number(Number::Rational(Rational::new(1, 2))),
+                Token::Number(Number::Rational(Rational::new(1, 4))),
+                Token::Number(Number::Rational(Rational::new(1, 8))),
+                Token::Close,
+            ])
+        );
     }
 
     #[test]
@@ -517,6 +571,37 @@ mod test {
         assert_eq!(
             token().parse("the-word-recursion-has-many-meanings"),
             Ok((Token::Ident("the-word-recursion-has-many-meanings"), ""))
+        );
+    }
+
+    #[test]
+    fn test_token_number() {
+        assert_eq!(
+            token().parse("123"),
+            Ok((Token::Number(Number::Integer(123)), ""))
+        );
+
+        assert_eq!(
+            token().parse("-123"),
+            Ok((Token::Number(Number::Integer(-123)), ""))
+        );
+
+        assert_eq!(
+            token().parse("123.456"),
+            Ok((Token::Number(Number::Real(123.456)), ""))
+        );
+
+        assert_eq!(
+            token().parse("-123.456"),
+            Ok((Token::Number(Number::Real(-123.456)), ""))
+        );
+
+        assert_eq!(
+            token().parse("#e123.456"),
+            Ok((
+                Token::Number(Number::Rational(Rational::new(123_456, 1000))),
+                ""
+            ))
         );
     }
 }
