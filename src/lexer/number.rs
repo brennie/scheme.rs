@@ -105,8 +105,19 @@ where
     })
 }
 
+fn digit<'a, I>(radix: Radix) -> impl Parser<Input = I, Output = u32>
+where
+    I: RangeStream<Item = char, Range = &'a str>,
+    I::Error: ParseError<I::Item, I::Range, I::Position>,
+{
+    let radix = radix.into();
+    satisfy(move |c: char| c.is_digit(radix)).map(move |c: char| c.to_digit(radix).unwrap())
+}
+
 #[cfg(test)]
 mod test {
+    use std::char::from_digit;
+
     use super::*;
 
     #[test]
@@ -215,6 +226,40 @@ mod test {
             prefix().parse("#i#x"),
             Ok(((Radix::Hexadecimal, Some(Exactness::Inexact)), ""))
         );
+    }
+
+    #[test]
+    fn test_digit() {
+        assert_eq!(digit(Radix::Binary).parse("0"), Ok((0, "")));
+        assert_eq!(digit(Radix::Binary).parse("1"), Ok((1, "")));
+
+        for i in 0..=7 {
+            let input = format!("{}", from_digit(i, 8).unwrap());
+
+            assert_eq!(digit(Radix::Octal).parse(&*input), Ok((i, "")), "i = {}", i);
+        }
+
+        for i in 0..=9 {
+            let input = format!("{}", from_digit(i, 10).unwrap());
+
+            assert_eq!(
+                digit(Radix::Decimal).parse(&*input),
+                Ok((i, "")),
+                "i = {}",
+                i
+            );
+        }
+
+        for i in 0x0..=0xF {
+            let input = format!("{}", from_digit(i, 16).unwrap());
+
+            assert_eq!(
+                digit(Radix::Hexadecimal).parse(&*input),
+                Ok((i, "")),
+                "i = {}",
+                i
+            );
+        }
     }
 
 }
