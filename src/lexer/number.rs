@@ -53,7 +53,7 @@ where
     I: RangeStream<Item = char, Range = &'a str>,
     I::Error: ParseError<I::Item, I::Range, I::Position>,
 {
-    optional(or(item('+').map(|_| 1), item('-').map(|_| -1))).map(|myb_sign| myb_sign.unwrap_or(1))
+    or(item('+').map(|_| 1), item('-').map(|_| -1))
 }
 
 /// Parse the prefix of a number.
@@ -105,6 +105,7 @@ where
     })
 }
 
+/// Parse a single digit in a given radix.
 fn digit<'a, I>(radix: Radix) -> impl Parser<Input = I, Output = u32>
 where
     I: RangeStream<Item = char, Range = &'a str>,
@@ -124,7 +125,6 @@ mod test {
     fn test_sign() {
         assert_eq!(sign().parse("+"), Ok((1, "")));
         assert_eq!(sign().parse("-"), Ok((-1, "")));
-        assert_eq!(sign().parse(""), Ok((1, "")));
     }
 
     #[test]
